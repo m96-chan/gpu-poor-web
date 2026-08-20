@@ -1,38 +1,38 @@
 # gpu-poor-web
 
-**VRAMに収まらないLLMを、ブラウザで、それでも回す研究。**
+**Running LLMs that don't fit in your VRAM — in the browser, anyway.**
 
-[AirLLM](https://github.com/lyogavin/airllm)(レイヤー単位ページングで4GB GPUに70Bを通すやつ)をWebGPUに持ち込んだらLLMサーバー要らなくなくね？ という思いつきから始まったバカ研究リポジトリ。真面目にやります。
+Started from a dumb thought: if [AirLLM](https://github.com/lyogavin/airllm) (layer-paged inference that squeezes a 70B through a 4GB GPU) could be ported to WebGPU... you wouldn't need an LLM server at all, would you? This is the research repo for taking that thought seriously.
 
-> Status: 研究段階。動くものはまだ無い。
+> Status: research. Nothing runs yet.
 
-## 前提となる物理
+## The physics you don't get to argue with
 
-レイヤーページング方式のデコード1トークン = モデル全重みをストレージ→GPUに流す。つまり床はストレージ帯域で決まる:
+With layer paging, decoding one token = streaming the entire model's weights from storage into the GPU. The floor is storage bandwidth:
 
-| モデル | int8サイズ | NVMe→GPU実効 2〜4GB/s での床 |
+| model | int8 size | floor at 2–4 GB/s effective NVMe→GPU |
 |---|---|---|
-| 8B | 〜8GB | 2〜4秒/トークン |
-| 70B (int4) | 〜35GB | 10〜20秒/トークン |
-| 70B (fp16) | 140GB | [〜20秒/トークン(Gen4 NVMe 7GB/sでも)](https://umesh-malik.com/blog/run-70b-llm-on-4gb-gpu-airllm) |
+| 8B | ~8 GB | 2–4 s/token |
+| 70B (int4) | ~35 GB | 10–20 s/token |
+| 70B (fp16) | 140 GB | [~20 s/token even on a Gen4 NVMe at 7 GB/s](https://umesh-malik.com/blog/run-70b-llm-on-4gb-gpu-airllm) |
 
-**チャットの対話レイテンシとしては死んでいる。** これを認めた上で、死んでいない使い道と、死なない変種を探すのがこのリポジトリ。
+**As chat latency, this is dead on arrival.** The point of this repo is to accept that, then hunt for the use cases where it isn't dead — and the variants that don't die.
 
-## 先行事例(2026-08時点の調査)
+## Prior art (surveyed 2026-08)
 
-- **AirLLMのブラウザ/WebGPU移植を名乗るものは見つからない**。このニッチは空いている
-- [Llamas on the Web](https://arxiv.org/html/2605.20706v1)(llama.cpp WebGPUバックエンドの論文): OPFS→WebGPUへ小さなステージングバッファで重みを流す実装がある。ただし**ロード時**のメモリ効率化であり、VRAM超過モデルの毎トークンページングではない
-- [Layer-wise inferencing + batching](https://verdagon.dev/blog/llm-throughput-not-ram-limited): レイヤーページングは**大バッチならスループットが出る**(レイヤー1回のロードを多数の系列で償却)。レイテンシは救えないがバッチ仕事なら成立する、という重要な観察
-- [WebLLM](https://github.com/mlc-ai/web-llm) / wllama等の既存ブラウザ推論は「VRAMに載る前提」の世界。ここはその外側
+- **No project claiming an AirLLM-style browser/WebGPU port was found.** The niche is open
+- [Llamas on the Web](https://arxiv.org/html/2605.20706v1) (the paper behind llama.cpp's WebGPU backend): streams weights OPFS→WebGPU through small staging buffers — but for **load-time** memory efficiency, not per-token paging of larger-than-VRAM models
+- [Layer-wise inferencing + batching](https://verdagon.dev/blog/llm-throughput-not-ram-limited): layer paging achieves real **throughput with large batches** (one layer load amortized across many sequences). It can't save latency, but batch workloads survive — a key observation
+- [WebLLM](https://github.com/mlc-ai/web-llm), wllama, and friends all live in the "fits in VRAM" world. This repo is about what's outside it
 
-## 研究ロードマップ
+## Research roadmap
 
-1. **E1: 帯域の実測** — FSA(File System Access)/OPFS→ArrayBuffer→`writeBuffer`の実効スループットをブラウザ実機で測る。全ての議論の分母
-2. **E2: レイヤーページング骨格** — [web-xpu-ops](https://github.com/m96-chan/web-xpu-ops)のop群+常駐エンジンの上に、重みだけ非常駐(レイヤー単位でFSAからストリーム)の実行器を組む。まず3B級で「動く・正しい・遅い」を確立
-3. **E3: バッチスループットモード** — 対話ではなくバッチ処理(データ生成、要約、記憶の整理)として回す。ユースケース例: キャラチャットの「睡眠時間」(深夜の無人時間帯)にブラウザ内ででかいモデルのバッチ仕事を回す
-4. **E4: MoE expertページング(本命)** — denseの全量ストリームではなく、**スパースMoEのactive expertだけ**をストリームする。671B MoEが70B denseより流量が少ない世界。ホットexpertをVRAM常駐(LRU)、コールドをFSAからページング。これが成立すると「GPU poorがフロンティア級MoEをブラウザで回す」が視野に入る
+1. **E1: Measure the bandwidth** — real-browser throughput of FSA (File System Access) / OPFS → ArrayBuffer → `writeBuffer`. The denominator of every argument here
+2. **E2: Layer-paging skeleton** — on top of [web-xpu-ops](https://github.com/m96-chan/web-xpu-ops) (WGSL ops + a resident llama-arch engine), build an executor whose weights are *non*-resident: streamed layer-by-layer from FSA. Establish "works, correct, slow" on a ~3B first
+3. **E3: Batch-throughput mode** — run it as batch processing (data generation, summarization, memory consolidation), not conversation. Example use: a character-chat site whose mascot "sleeps" at night — the browser runs big-model batch jobs during the unattended hours
+4. **E4: MoE expert paging (the real prize)** — instead of streaming a dense model whole, stream only a sparse MoE's **active experts**. A 671B MoE moves less data per token than a 70B dense. Keep hot experts resident in VRAM (LRU), page cold ones from FSA. If this works, "GPU-poor runs a frontier-class MoE in a browser tab" comes into view
 
-## 関連
+## Related
 
-- [web-xpu-ops](https://github.com/m96-chan/web-xpu-ops) — WGSLオペ+実GPU検証ハーネス+llamaアーキ常駐エンジン(このリポの土台)
-- 発想元: [AirLLM](https://github.com/lyogavin/airllm)
+- [web-xpu-ops](https://github.com/m96-chan/web-xpu-ops) — WGSL primitive ops, a real-GPU test harness, and a resident llama-arch engine (the foundation this builds on)
+- Inspiration: [AirLLM](https://github.com/lyogavin/airllm)
