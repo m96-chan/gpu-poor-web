@@ -1,0 +1,24 @@
+{
+  // What would ship, checked as a strict subset of what gets type-checked by
+  // `tsconfig.json`. There is no `build` script yet (nothing has published
+  // this package), but `typecheck` runs this project too, so a file that
+  // would fail to type-check *outside* the wider dev context (test globals,
+  // `node` ambient types leaking into published code) is caught in CI rather
+  // than discovered at publish time.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "src",
+    "declaration": true,
+    // Published code should depend on no ambient types at all. Stating that
+    // here rather than inheriting `["node"]` makes typecheck fail if
+    // `src/` ever reaches for a Node global, which would quietly narrow
+    // where this package can run (it must work in a browser).
+    "types": []
+  },
+  // Test files are excluded: they use vitest globals (`describe`, `it`,
+  // `expect`) which are dev-only and have no business being part of what a
+  // consumer of this package would ever type-check against.
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

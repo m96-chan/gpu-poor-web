@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+
+# bench output — measurement runs write timestamped results here so they
+# are not silently overwritten; the raw JSON is data, not source, and
+# stays out of version control until a curation step decides what belongs
+# in CHANGELOG.md / README.md as a recorded result.
+bench/results/
+*.log
