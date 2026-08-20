@@ -1,0 +1,27 @@
+{
+  "name": "gpu-poor-web",
+  "version": "0.0.0",
+  "description": "Running LLMs that don't fit in your VRAM — in the browser, anyway.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.build.json --noEmit",
+    "bench": "node --import ./bench/register-ts-loader.mjs bench/run.mjs"
+  },
+  "dependencies": {
+    "web-xpu-ops": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "playwright": "^1.62.1",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

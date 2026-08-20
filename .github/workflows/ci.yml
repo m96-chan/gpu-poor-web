@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Runners have no GPU and no real browser. Coverage excludes bench/
+      # and src/env/ for exactly that reason (see vitest.config.ts) — this
+      # step verifies pure logic, not real WebGPU/OPFS behavior. Those get
+      # verified on a machine with an adapter, per CLAUDE.md rule 2.
+      - run: npm test
